@@ -1,0 +1,12 @@
+services:
+  onyx-mcp:
+    build:
+      context: .
+    image: onyx-mcp:latest
+    restart: unless-stopped
+    ports:
+      - "${PORT:-10000}:10000"
+    env_file: .env
+    environment:
+      # Keep the in-container port fixed; PORT in .env only changes the host side.
+      PORT: "10000"

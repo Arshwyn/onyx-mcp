@@ -1,0 +1,106 @@
+# onyx-mcp
+
+An MCP (Model Context Protocol) server that exposes a Supabase-backed Onyx
+workout tracker to MCP clients such as a claude.ai custom connector. It
+provides tools to read and write exercises, lifting and cardio logs,
+routines, body weight, measurements, daily overrides and user settings.
+Access is protected by an OAuth 2.0 authorization-code flow with PKCE; each
+configured client is bound to one Supabase user.
+
+## Prerequisites
+
+- Node.js 20+ (or Docker)
+- A Supabase project with these tables: `global_exercises`, `custom_exercises`,
+  `workout_logs`, `cardio_logs`, `routines`, `body_weights`, `circumferences`,
+  `daily_overrides`, `user_settings`. Per-user rows are scoped by a `user_id`
+  column.
+- The project's service role key.
+
+## Configuration
+
+Set these in `.env` (see `.env.example`).
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `SUPABASE_URL` | yes | Supabase project URL. `VITE_SUPABASE_URL` is accepted as a fallback. |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | Service role key. |
+| `OAUTH_CLIENTS` | yes | Comma-separated client names matching `^[a-z0-9-]+$`, e.g. `alice,bob`. |
+| `OAUTH_CLIENT_<N>_ID` | per client | OAuth client ID. `<N>` is the name uppercased with `-` replaced by `_`. |
+| `OAUTH_CLIENT_<N>_SECRET` | per client | OAuth client secret (e.g. `openssl rand -hex 32`). |
+| `OAUTH_CLIENT_<N>_USER_ID` | per client | Supabase user UUID this client acts as. |
+| `OAUTH_CLIENT_<N>_REDIRECT_URI` | per client | Exact callback URL of the connector. |
+| `PORT` | no | Listen port when run with `npm start`, default `10000`. With Docker Compose it only sets the host port; the container always listens on 10000. |
+
+The server exits with an error if the Supabase settings are missing or no
+client is fully configured. An incomplete client is skipped with a warning
+that names the missing keys (never their values).
+
+## Migrating from older versions
+
+Earlier versions read per-person variables such as `AUTH_TOKEN_ALICE`,
+`AUTH_USER_ID_ALICE` and `AUTH_REDIRECT_URI_ALICE`. These are no longer read;
+if they are the only client config, the server exits with code 1 at startup
+because no clients are configured. Before upgrading, add to `.env`:
+
+```
+OAUTH_CLIENTS=alice,bob
+OAUTH_CLIENT_ALICE_ID=<existing client id>
+OAUTH_CLIENT_ALICE_SECRET=<value of AUTH_TOKEN_ALICE>
+OAUTH_CLIENT_ALICE_USER_ID=<value of AUTH_USER_ID_ALICE>
+OAUTH_CLIENT_ALICE_REDIRECT_URI=<value of AUTH_REDIRECT_URI_ALICE>
+```
+
+and the same four keys for each other client. Keep the old variables until the
+upgrade is verified if you may need to roll back. `VITE_SUPABASE_URL` still
+works as a fallback for `SUPABASE_URL`.
+
+## Run locally
+
+```
+cp .env.example .env   # then edit
+npm ci
+npm start
+```
+
+## Run with Docker
+
+```
+docker compose up -d --build
+```
+
+A `.env` file must exist next to `docker-compose.yml`, otherwise `docker compose up` fails. Compose reads it via `env_file`, so any `OAUTH_CLIENT_*` key is passed
+through. The container listens on 10000; the host port is `${PORT:-10000}`.
+
+## TLS
+
+Run the server behind a reverse proxy or tunnel that terminates TLS and sets
+`X-Forwarded-Proto`. The server sets `trust proxy`, so OAuth discovery URLs use
+the public scheme and host of each request. Do not expose the plain HTTP port
+directly to the internet.
+
+## Connecting a claude.ai custom connector
+
+1. Add a custom connector pointing at `https://mcp.example.com/sse` (your
+   public URL).
+2. In Advanced settings enter the client ID and client secret from your `.env`.
+3. Start the connection. If `OAUTH_CLIENT_<N>_REDIRECT_URI` is not yet set or
+   is wrong, the server logs `redirect_uri mismatch ... Received: <url>`;
+   copy that URL into the variable and restart.
+
+Authorization codes and access tokens are held in memory, so every restart
+requires clients to re-authorize.
+
+## Endpoints
+
+- `GET /` health check
+- `GET /.well-known/oauth-authorization-server`, `GET /.well-known/oauth-protected-resource`
+- `POST /oauth/register`, `GET /oauth/authorize`, `POST /oauth/token`
+- `GET /sse` and `POST /messages/:sessionId` (SSE transport)
+- `POST /` and `POST /sse` (streamable HTTP transport)
+
+## Security notes
+
+- The service role key bypasses RLS; the server enforces per-user scoping by
+  `user_id`. Keep `.env` private and out of version control.
+- Request logging records method and path only; headers, bodies and secrets
+  are never logged.
