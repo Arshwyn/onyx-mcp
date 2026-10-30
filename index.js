@@ -351,7 +351,7 @@ app.get("/oauth/authorize", (req, res) => {
 
   const client = CLIENTS.get(client_id);
   if (!client || !redirect_uri) {
-    console.warn(`/oauth/authorize rejected: ${client ? "missing redirect_uri" : `unknown client_id=${client_id}`}`);
+    console.warn(`/oauth/authorize rejected: ${client ? "missing redirect_uri" : `unknown client_id=${logValue(client_id)}`}`);
     return res.status(400).send("invalid_request");
   }
 
@@ -360,7 +360,7 @@ app.get("/oauth/authorize", (req, res) => {
     // setup (or by a scanner) -- log it so the real callback URL can be
     // read off here and put into OAUTH_CLIENT_<NAME>_REDIRECT_URI, but never redirect
     // to an unlisted URI.
-    console.warn(`/oauth/authorize: redirect_uri mismatch for client_id=${client_id}. Received: ${redirect_uri}`);
+    console.warn(`/oauth/authorize: redirect_uri mismatch for client_id=${logValue(client_id)}. Received: ${logValue(redirect_uri)}`);
     return res.status(400).send("invalid_request");
   }
 
@@ -385,19 +385,19 @@ app.post("/oauth/token", express.urlencoded({ extended: false }), express.json()
   const client_secret = basicAuth ? basicAuth.clientSecret : req.body.client_secret;
 
   if (grant_type !== "authorization_code") {
-    console.warn(`/oauth/token rejected: unsupported grant_type=${grant_type}`);
+    console.warn(`/oauth/token rejected: unsupported grant_type=${logValue(grant_type)}`);
     return res.status(400).json({ error: "unsupported_grant_type" });
   }
 
   const client = CLIENTS.get(client_id);
   if (!client || !secretsMatch(client.clientSecret, client_secret)) {
-    console.warn(`/oauth/token rejected: invalid_client for client_id=${client_id}`);
+    console.warn(`/oauth/token rejected: invalid_client for client_id=${logValue(client_id)}`);
     return res.status(401).json({ error: "invalid_client" });
   }
 
   const authCode = AUTH_CODES.get(code);
   if (!authCode || authCode.expiresAt < Date.now() || authCode.clientId !== client_id || authCode.redirectUri !== redirect_uri) {
-    console.warn(`/oauth/token rejected: invalid_grant for client_id=${client_id} (missing/expired/reused code or redirect_uri mismatch)`);
+    console.warn(`/oauth/token rejected: invalid_grant for client_id=${logValue(client_id)} (missing/expired/reused code or redirect_uri mismatch)`);
     return res.status(400).json({ error: "invalid_grant" });
   }
   AUTH_CODES.delete(code);
@@ -407,7 +407,7 @@ app.post("/oauth/token", express.urlencoded({ extended: false }), express.json()
       ? base64url(crypto.createHash("sha256").update(code_verifier).digest())
       : null;
     if (computedChallenge !== authCode.codeChallenge) {
-      console.warn(`/oauth/token rejected: PKCE verification failed for client_id=${client_id}`);
+      console.warn(`/oauth/token rejected: PKCE verification failed for client_id=${logValue(client_id)}`);
       return res.status(400).json({ error: "invalid_grant" });
     }
   }
@@ -476,7 +476,7 @@ app.post("/messages/:sessionId", async (req, res) => {
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
-    console.warn(`404 Warning: Message received for unknown session: ${sessionId}`);
+    console.warn(`404 Warning: Message received for unknown session: ${logValue(sessionId)}`);
     res.status(404).send("Session not found or expired.");
   }
 });
@@ -501,7 +501,7 @@ async function handleStreamablePost(req, res) {
   if (sessionIdHeader && streamableTransports.has(sessionIdHeader)) {
     const session = streamableTransports.get(sessionIdHeader);
     if (session.userId !== userId) {
-      console.warn(`POST ${req.path} rejected: session ${sessionIdHeader} does not belong to the authenticated user`);
+      console.warn(`POST ${req.path} rejected: session ${logValue(sessionIdHeader)} does not belong to the authenticated user`);
       return res.status(403).send("Forbidden");
     }
     transport = session.transport;
@@ -547,7 +547,7 @@ async function handleStreamableDelete(req, res) {
   }
 
   if (session.userId !== userId) {
-    console.warn(`DELETE ${req.path} rejected: session ${sessionIdHeader} does not belong to the authenticated user`);
+    console.warn(`DELETE ${req.path} rejected: session ${logValue(sessionIdHeader)} does not belong to the authenticated user`);
     return res.status(403).send("Forbidden");
   }
 
