@@ -3,7 +3,8 @@
 An MCP (Model Context Protocol) server that exposes a Supabase-backed Onyx
 workout tracker to MCP clients such as a claude.ai custom connector. It
 provides tools to read and write exercises, lifting and cardio logs,
-routines, body weight, measurements, daily overrides and user settings.
+routines, body weight, measurements, daily overrides (a routine override or
+a rest day) and user settings.
 Access is protected by an OAuth 2.0 authorization-code flow with PKCE; each
 configured client is bound to one Supabase user.
 
@@ -13,7 +14,10 @@ configured client is bound to one Supabase user.
 - A Supabase project with these tables: `global_exercises`, `custom_exercises`,
   `workout_logs`, `cardio_logs`, `routines`, `body_weights`, `circumferences`,
   `daily_overrides`, `user_settings`. Per-user rows are scoped by a `user_id`
-  column.
+  column. `daily_overrides` must include the `is_rest` boolean column
+  (`routine_id` nullable) and the `daily_overrides_rest_xor_routine` check
+  constraint, as added by the Onyx migration
+  `202610300000_daily_overrides_is_rest.sql`. This repo ships no migration.
 - The project's service role key.
 
 ## Configuration
@@ -89,6 +93,33 @@ directly to the internet.
 
 Authorization codes and access tokens are held in memory, so every restart
 requires clients to re-authorize.
+
+## Daily overrides
+
+A date can have one override per user: either a routine or a rest day.
+
+- `set_daily_override` takes `date` (`YYYY-MM-DD`), `routineId` (positive
+  integer or null) and `isRest` (boolean, default `false`). With a `routineId`
+  and `isRest` false or omitted it sets a routine override. With
+  `isRest: true` and `routineId` null or omitted it marks a rest day. It
+  replaces whatever override the date already holds. These are rejected with
+  an error before the database is touched: `isRest: true` together with a
+  `routineId`; no `routineId` without `isRest: true`; a `routineId` that is
+  not a positive integer; a `date` that is not a valid `YYYY-MM-DD`.
+- `get_daily_override` returns `date`, `routine_id` and `is_rest`. A rest day
+  has `is_rest: true` and `routine_id: null`. A date without an override
+  returns a "No override found" message.
+- `remove_daily_override` deletes the row, clearing either a routine override
+  or a rest day.
+
+## Testing
+
+```
+npm test
+```
+
+Runs the unit tests with the built-in Node test runner. They use fakes and
+need no `.env` or database.
 
 ## Endpoints
 
