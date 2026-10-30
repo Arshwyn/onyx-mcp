@@ -8,6 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, ListToolsRequestSchema, isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createClient } from '@supabase/supabase-js';
 import { validateSetOverride, buildOverrideRow, setOverrideMessage, formatOverrideResponse, OVERRIDE_SELECT } from "./daily-override.js";
+import { secretsMatch, logValue } from "./security.js";
 
 const app = express();
 
@@ -389,7 +390,7 @@ app.post("/oauth/token", express.urlencoded({ extended: false }), express.json()
   }
 
   const client = CLIENTS.get(client_id);
-  if (!client || client.clientSecret !== client_secret) {
+  if (!client || !secretsMatch(client.clientSecret, client_secret)) {
     console.warn(`/oauth/token rejected: invalid_client for client_id=${client_id}`);
     return res.status(401).json({ error: "invalid_client" });
   }
