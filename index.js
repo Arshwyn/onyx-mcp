@@ -7,6 +7,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createClient } from '@supabase/supabase-js';
+import { validateSetOverride, buildOverrideRow, setOverrideMessage, formatOverrideResponse, OVERRIDE_SELECT } from "./daily-override.js";
 
 const app = express();
 
@@ -146,9 +147,9 @@ const ALL_TOOLS = [
   { name: "log_measurement", description: "Log a body part circumference measurement", inputSchema: { type: "object", properties: { date: { type: "string" }, bodyPart: { type: "string", description: "E.g., Waist, Chest, Left Arm, etc." }, measurement: { type: "number" } }, required: ["date", "bodyPart", "measurement"] } },
   { name: "delete_measurement", description: "Delete a body measurement log by ID", inputSchema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
   { name: "delete_body_weight", description: "Delete a body weight log by ID", inputSchema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] } },
-  { name: "get_daily_override", description: "Check if a specific date has a custom routine override or is set as a rest day", inputSchema: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } },
-  { name: "set_daily_override", description: "Override the default schedule by setting a specific routine ID for a date", inputSchema: { type: "object", properties: { date: { type: "string" }, routineId: { type: "number", description: "The ID of the routine to use for this date" } }, required: ["date", "routineId"] } },
-  { name: "remove_daily_override", description: "Remove a schedule override, returning the date to its default weekly schedule", inputSchema: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } },
+  { name: "get_daily_override", description: "Check if a specific date has a custom routine override or is set as a rest day. Returns date, routine_id and is_rest; a rest day has is_rest: true and routine_id: null.", inputSchema: { type: "object", properties: { date: { type: "string", description: "Date in YYYY-MM-DD format" } }, required: ["date"] } },
+  { name: "set_daily_override", description: "Override the default schedule for a date: either use a specific routine (routineId) or mark the date as a rest day (isRest: true with routineId null or omitted). Replaces any existing override on that date.", inputSchema: { type: "object", properties: { date: { type: "string", description: "Date in YYYY-MM-DD format" }, routineId: { type: ["number", "null"], description: "Positive integer ID of the routine to use for this date. Required unless isRest is true; must be null or omitted for a rest day." }, isRest: { type: "boolean", description: "Set true to mark the date as a rest day (requires routineId null or omitted). Defaults to false." } }, required: ["date"] } },
+  { name: "remove_daily_override", description: "Remove a schedule override (a routine override or a rest day), returning the date to its default weekly schedule", inputSchema: { type: "object", properties: { date: { type: "string" } }, required: ["date"] } },
   { name: "get_user_settings", description: "Get the user's unit, display, and progression preferences. Returns an object shaped like update_user_settings' settings argument (weight_unit, measure_unit, distance_unit, timer_increments, show_timer, show_confetti, show_body_weight, show_measurements, progression_enabled, progression_step, default_bar_weight, name, mechanic_rep_defaults).", inputSchema: { type: "object", properties: {} } },
   { name: "update_user_settings", description: "Update the user's settings", inputSchema: { type: "object", properties: { settings: { type: "object", description: "Fields to update -- only the ones provided are changed", properties: { weight_unit: { type: "string", enum: ["lbs", "kg"] }, measure_unit: { type: "string", enum: ["in", "cm"] }, distance_unit: { type: "string", enum: ["mi", "km"] }, timer_increments: { type: "array", items: { type: "number" }, description: "Rest timer quick-select durations, in seconds" }, show_timer: { type: "boolean" }, show_confetti: { type: "boolean" }, show_body_weight: { type: "boolean" }, show_measurements: { type: "boolean" }, progression_enabled: { type: "boolean" }, progression_step: { type: "number", description: "Weight increment suggested by auto-progression" }, default_bar_weight: { type: "number", description: "Unit-less bar weight, in whatever unit weight_unit currently is" }, name: { type: "string", nullable: true, description: "Display name; falls back to the account email when unset" }, mechanic_rep_defaults: { type: "object", nullable: true, description: "Default rep-range targets keyed by exercise mechanic ('compound' | 'isolation')" } } } }, required: ["settings"] } }
 ];
@@ -277,14 +278,16 @@ function createOnyxServer(userId) {
           return { content: [{ type: "text", text: `Body weight log deleted.` }] };
         }
         case "get_daily_override": {
-          const { data, error } = await supabase.from('daily_overrides').select('*').eq('user_id', userId).eq('date', args.date).maybeSingle();
+          const { data, error } = await supabase.from('daily_overrides').select(OVERRIDE_SELECT).eq('user_id', userId).eq('date', args.date).maybeSingle();
           if (error && error.code !== 'PGRST116') throw error;
-          return { content: [{ type: "text", text: JSON.stringify(data || { message: "No override found for this date" }) }] };
+          return { content: [{ type: "text", text: JSON.stringify(formatOverrideResponse(data)) }] };
         }
         case "set_daily_override": {
-          const { error } = await supabase.from('daily_overrides').upsert({ user_id: userId, date: args.date, routine_id: args.routineId });
+          const parsed = validateSetOverride(args);
+          if (!parsed.ok) return { content: [{ type: "text", text: parsed.error }], isError: true };
+          const { error } = await supabase.from('daily_overrides').upsert(buildOverrideRow(userId, parsed));
           if (error) throw error;
-          return { content: [{ type: "text", text: `Successfully set routine override.` }] };
+          return { content: [{ type: "text", text: setOverrideMessage(parsed) }] };
         }
         case "remove_daily_override": {
           const { error } = await supabase.from('daily_overrides').delete().eq('user_id', userId).eq('date', args.date);
