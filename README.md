@@ -73,7 +73,7 @@ docker compose up -d --build
 ```
 
 A `.env` file must exist next to `docker-compose.yml`, otherwise `docker compose up` fails. Compose reads it via `env_file`, so any `OAUTH_CLIENT_*` key is passed
-through. The container listens on 10000; the host port is `${PORT:-10000}`.
+through, so keep only application variables in that file. The container listens on 10000; the host port is `${PORT:-10000}`.
 
 ## TLS
 
@@ -88,8 +88,9 @@ directly to the internet.
    public URL).
 2. In Advanced settings enter the client ID and client secret from your `.env`.
 3. Start the connection. If `OAUTH_CLIENT_<N>_REDIRECT_URI` is not yet set or
-   is wrong, the server logs `redirect_uri mismatch ... Received: <url>`;
-   copy that URL into the variable and restart.
+   is wrong, the server logs `redirect_uri mismatch ... Received: "<url>"`
+   (the URL is JSON-quoted); copy the URL without the quotes into the variable
+   and restart.
 
 Authorization codes and access tokens are held in memory, so every restart
 requires clients to re-authorize.
@@ -133,5 +134,15 @@ need no `.env` or database.
 
 - The service role key bypasses RLS; the server enforces per-user scoping by
   `user_id`. Keep `.env` private and out of version control.
+- `.env` should hold only the variables this app uses: Compose passes every
+  key in it to the container.
+- The server sets `trust proxy`, so it trusts `X-Forwarded-*` headers from
+  any client. The reverse proxy or tunnel must be the only network route to
+  the server port; otherwise those headers can be spoofed.
+- To rotate the Supabase service role key, generate a new one in the Supabase
+  dashboard, update `SUPABASE_SERVICE_ROLE_KEY` in `.env`, and restart the
+  server (`docker compose up -d`). Revoke the old key afterwards.
+- Client-supplied values written to logs (client ID, redirect URI, grant
+  type, session IDs) are JSON-quoted so they cannot inject extra log lines.
 - Request logging records method and path only; headers, bodies and secrets
   are never logged.
