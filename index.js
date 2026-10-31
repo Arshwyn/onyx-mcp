@@ -19,6 +19,9 @@ const app = express();
 // http:// even when served over https://.
 app.set("trust proxy", true);
 
+// Do not advertise the framework in responses.
+app.disable("x-powered-by");
+
 // Blanket request trace for diagnosing the OAuth flow -- method and path
 // only. Never log headers or bodies here: Authorization headers and
 // token-exchange client_secrets pass through routes this logger sees.
