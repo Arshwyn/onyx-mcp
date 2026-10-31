@@ -9,6 +9,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, isInitializeRequest } fr
 import { createClient } from '@supabase/supabase-js';
 import { validateSetOverride, buildOverrideRow, setOverrideMessage, formatOverrideResponse, OVERRIDE_SELECT } from "./daily-override.js";
 import { secretsMatch, logValue } from "./security.js";
+import { baselineHeaders, noStore, parseAllowedOrigins, corsAllowlist } from "./http-headers.js";
 
 const app = express();
 
@@ -30,7 +31,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors());
+app.use(baselineHeaders);
+app.use("/oauth", noStore);
 
 // SUPABASE_URL is preferred; VITE_SUPABASE_URL is accepted as a fallback.
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
