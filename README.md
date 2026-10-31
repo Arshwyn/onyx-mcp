@@ -10,7 +10,7 @@ configured client is bound to one Supabase user.
 
 ## Prerequisites
 
-- Node.js 20+ (or Docker)
+- Node.js 24+ (or Docker)
 - A Supabase project with these tables: `global_exercises`, `custom_exercises`,
   `workout_logs`, `cardio_logs`, `routines`, `body_weights`, `circumferences`,
   `daily_overrides`, `user_settings`. Per-user rows are scoped by a `user_id`
@@ -71,6 +71,13 @@ npm start
 ```
 docker compose up -d --build
 ```
+
+The image is built on `node:24.22.2-trixie-slim` (Node 24 on Debian 13 slim),
+pinned to an exact version. To pick up base image patches, rebuild with
+`docker compose build --pull` and restart. The image tag is `onyx-mcp:latest`
+by default; to use another tag set `IMAGE_TAG` in the shell (optional), for
+example `IMAGE_TAG=1.2.3 docker compose up -d --build`. Prefer the shell over
+`.env`, because Compose passes every `.env` key into the container.
 
 A `.env` file must exist next to `docker-compose.yml`, otherwise `docker compose up` fails. Compose reads it via `env_file`, so any `OAUTH_CLIENT_*` key is passed
 through, so keep only application variables in that file. The container listens on 10000; the host port is `${PORT:-10000}`.
