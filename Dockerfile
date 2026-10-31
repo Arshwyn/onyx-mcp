@@ -25,6 +25,9 @@ RUN rm -rf /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
 COPY --from=deps /app/node_modules ./node_modules
 COPY index.js daily-override.js security.js ./
 
+# Run as the unprivileged user from the base image (uid 1000); app files stay root-owned and read-only.
+USER node
+
 EXPOSE 10000
 
 CMD ["node", "index.js"]
