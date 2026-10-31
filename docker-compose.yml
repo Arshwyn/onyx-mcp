@@ -2,7 +2,7 @@ services:
   onyx-mcp:
     build:
       context: .
-    image: onyx-mcp:latest
+    image: onyx-mcp:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "${PORT:-10000}:10000"
