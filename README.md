@@ -33,6 +33,7 @@ Set these in `.env` (see `.env.example`).
 | `OAUTH_CLIENT_<N>_SECRET` | per client | OAuth client secret (e.g. `openssl rand -hex 32`). |
 | `OAUTH_CLIENT_<N>_USER_ID` | per client | Supabase user UUID this client acts as. |
 | `OAUTH_CLIENT_<N>_REDIRECT_URI` | per client | Exact callback URL of the connector. |
+| `CORS_ALLOWED_ORIGINS` | no | Comma-separated exact origins allowed to make cross-origin browser requests, e.g. `https://app.example.com`. Default empty: no CORS headers at all. Origins only (`https://host[:port]`, or `http://localhost[:port]`); no paths, trailing slashes or wildcards. An invalid entry stops startup. |
 | `PORT` | no | Listen port when run with `npm start`, default `10000`. With Docker Compose it only sets the host port; the container always listens on 10000. |
 
 The server exits with an error if the Supabase settings are missing or no
@@ -109,6 +110,10 @@ directly to the internet.
    (the URL is JSON-quoted); copy the URL without the quotes into the variable
    and restart.
 
+Server-side connectors make no cross-origin browser requests and need no CORS
+configuration. A browser-based client must have its exact origin added to
+`CORS_ALLOWED_ORIGINS` (then restart).
+
 Authorization codes and access tokens are held in memory, so every restart
 requires clients to re-authorize.
 
@@ -148,6 +153,8 @@ quoted test glob is not expanded and the run fails.
 - `GET /sse` and `POST /messages/:sessionId` (SSE transport)
 - `POST /` and `POST /sse` (streamable HTTP transport)
 
+CORS applies to all routes through the `CORS_ALLOWED_ORIGINS` allowlist.
+
 ## Security notes
 
 - The container runs as a non-root user with a read-only root filesystem,
@@ -166,3 +173,13 @@ quoted test glob is not expanded and the run fails.
   type, session IDs) are JSON-quoted so they cannot inject extra log lines.
 - Request logging records method and path only; headers, bodies and secrets
   are never logged.
+- Every response carries `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and
+  `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`.
+  `/oauth/*` responses also send `Cache-Control: no-store`. The
+  `X-Powered-By` header is removed.
+- CORS is off by default. When `CORS_ALLOWED_ORIGINS` is set, only those exact
+  origins get `Access-Control-Allow-Origin` (never `*`, never credentials, no
+  reflection of other origins) and responses send `Vary: Origin`.
+- HSTS is not set by the app; configure it on the TLS-terminating reverse
+  proxy, which should also not re-add `X-Powered-By` or a wildcard CORS header.
