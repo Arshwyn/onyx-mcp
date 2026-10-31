@@ -10,3 +10,8 @@ services:
     environment:
       # Keep the in-container port fixed; PORT in .env only changes the host side.
       PORT: "10000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
