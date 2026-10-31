@@ -86,6 +86,12 @@ example `IMAGE_TAG=1.2.3 docker compose up -d --build`. Prefer the shell over
 A `.env` file must exist next to `docker-compose.yml`, otherwise `docker compose up` fails. Compose reads it via `env_file`, so any `OAUTH_CLIENT_*` key is passed
 through, so keep only application variables in that file. The container listens on 10000; the host port is `${PORT:-10000}`.
 
+The container is hardened: it runs as the unprivileged `node` user (uid 1000),
+with a read-only root filesystem, all Linux capabilities dropped and
+`no-new-privileges` set. The app writes nothing to disk, so no tmpfs or volume
+is needed. Compose also defines a health check that runs `node` to request
+`http://127.0.0.1:10000/` and fails on a non-200 response.
+
 ## TLS
 
 Run the server behind a reverse proxy or tunnel that terminates TLS and sets
@@ -144,6 +150,8 @@ quoted test glob is not expanded and the run fails.
 
 ## Security notes
 
+- The container runs as a non-root user with a read-only root filesystem,
+  all capabilities dropped and `no-new-privileges` enabled.
 - The service role key bypasses RLS; the server enforces per-user scoping by
   `user_id`. Keep `.env` private and out of version control.
 - `.env` should hold only the variables this app uses: Compose passes every
