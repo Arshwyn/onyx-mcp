@@ -5,7 +5,8 @@ services:
     image: onyx-mcp:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
-      - "${PORT:-10000}:10000"
+      # BIND_ADDR is optional; unset or empty publishes on all interfaces as before.
+      - "${BIND_ADDR:+${BIND_ADDR}:}${PORT:-10000}:10000"
     env_file: .env
     environment:
       # Keep the in-container port fixed; PORT in .env only changes the host side.
