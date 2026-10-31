@@ -35,6 +35,7 @@ Set these in `.env` (see `.env.example`).
 | `OAUTH_CLIENT_<N>_REDIRECT_URI` | per client | Exact callback URL of the connector. |
 | `CORS_ALLOWED_ORIGINS` | no | Comma-separated exact origins allowed to make cross-origin browser requests, e.g. `https://app.example.com`. Default empty: no CORS headers at all. Origins only (`https://host[:port]`, or `http://localhost[:port]`); no paths, trailing slashes or wildcards. An invalid entry stops startup. |
 | `PORT` | no | Listen port when run with `npm start`, default `10000`. With Docker Compose it only sets the host port; the container always listens on 10000. |
+| `BIND_ADDR` | no | Docker Compose only (`npm start` and bare `node` ignore it): host interface the published port binds to. Unset or empty means all interfaces, the same as before. Set a LAN address for LAN-only access, or `127.0.0.1` when a reverse proxy or tunnel runs on the same host. A loopback bind breaks a tunnel or proxy that reaches the container through the host's LAN address. Bracket IPv6 literals, e.g. `[::1]`. |
 
 The server exits with an error if the Supabase settings are missing or no
 client is fully configured. An incomplete client is skipped with a warning
@@ -83,6 +84,15 @@ from it. The image tag is `onyx-mcp:latest`
 by default; to use another tag set `IMAGE_TAG` in the shell (optional), for
 example `IMAGE_TAG=1.2.3 docker compose up -d --build`. Prefer the shell over
 `.env`, because Compose passes every `.env` key into the container.
+
+To restrict which host interface publishes the port, set `BIND_ADDR` (optional,
+Compose only), for example `BIND_ADDR=192.0.2.10 docker compose up -d` for a
+LAN address, or `BIND_ADDR=127.0.0.1` when a proxy or tunnel runs on the same
+host. Unset or empty publishes on all interfaces, exactly as before. Bracket
+IPv6 literals (`BIND_ADDR=[::1]`). As with `IMAGE_TAG`, prefer the shell over
+`.env`, because Compose passes every `.env` key into the container. A loopback
+bind is unreachable for a tunnel or proxy that connects via the host's LAN
+address.
 
 A `.env` file must exist next to `docker-compose.yml`, otherwise `docker compose up` fails. Compose reads it via `env_file`, so any `OAUTH_CLIENT_*` key is passed
 through, so keep only application variables in that file. The container listens on 10000; the host port is `${PORT:-10000}`.
