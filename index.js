@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from "express";
-import cors from "cors";
 import crypto from "crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -33,6 +32,16 @@ app.use((req, res, next) => {
 
 app.use(baselineHeaders);
 app.use("/oauth", noStore);
+
+// CORS is off unless CORS_ALLOWED_ORIGINS lists exact origins.
+let corsOrigins;
+try {
+  corsOrigins = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS);
+} catch {
+  console.error("Invalid configuration: CORS_ALLOWED_ORIGINS");
+  process.exit(1);
+}
+app.use(corsAllowlist(corsOrigins));
 
 // SUPABASE_URL is preferred; VITE_SUPABASE_URL is accepted as a fallback.
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
