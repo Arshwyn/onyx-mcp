@@ -60,6 +60,8 @@ works as a fallback for `SUPABASE_URL`.
 
 ## Run locally
 
+Requires Node 24 or newer, for both `npm ci` and `npm start`.
+
 ```
 cp .env.example .env   # then edit
 npm ci
@@ -129,7 +131,8 @@ npm test
 ```
 
 Runs the unit tests with the built-in Node test runner. They use fakes and
-need no `.env` or database.
+need no `.env` or database. Node 24 or newer is required: on older Node the
+quoted test glob is not expanded and the run fails.
 
 ## Endpoints
 
