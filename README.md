@@ -74,7 +74,9 @@ docker compose up -d --build
 
 The image is built on `node:24.22.2-trixie-slim` (Node 24 on Debian 13 slim),
 pinned to an exact version. To pick up base image patches, rebuild with
-`docker compose build --pull` and restart. The image tag is `onyx-mcp:latest`
+`docker compose build --pull` and restart. The runtime image is built in two
+stages and contains only `node` and the app: npm, npx and corepack are removed
+from it. The image tag is `onyx-mcp:latest`
 by default; to use another tag set `IMAGE_TAG` in the shell (optional), for
 example `IMAGE_TAG=1.2.3 docker compose up -d --build`. Prefer the shell over
 `.env`, because Compose passes every `.env` key into the container.
