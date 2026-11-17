@@ -5,7 +5,7 @@ workout tracker to MCP clients such as a claude.ai custom connector. It
 provides tools to read and write exercises, lifting and cardio logs,
 routines, body weight, measurements, daily overrides (a routine override or
 a rest day) and user settings.
-Access is protected by an OAuth 2.0 authorization-code flow with PKCE and
+Access is protected by an OAuth 2.0 authorization-code flow with required PKCE (S256 only) and
 rotating refresh tokens; each configured client is bound to one Supabase user.
 
 ## Prerequisites
@@ -121,6 +121,12 @@ directly to the internet.
    (the URL is JSON-quoted); copy the URL without the quotes into the variable
    and restart.
 
+PKCE is required (OAuth 2.1 and the MCP authorization spec): `/oauth/authorize`
+needs a `code_challenge` with `code_challenge_method=S256`, otherwise it
+redirects back with `error=invalid_request`, and `/oauth/token` always checks
+the `code_verifier` against it. `plain` is not accepted. Refresh grants are
+not affected, and existing tokens keep working.
+
 Server-side connectors make no cross-origin browser requests and need no CORS
 configuration. A browser-based client must have its exact origin added to
 `CORS_ALLOWED_ORIGINS` (then restart).
@@ -181,7 +187,7 @@ quoted test glob is not expanded and the run fails.
 
 - `GET /` health check
 - `GET /.well-known/oauth-authorization-server`, `GET /.well-known/oauth-protected-resource`
-- `POST /oauth/register`, `GET /oauth/authorize`, `POST /oauth/token` (authorization code and refresh grants)
+- `POST /oauth/register`, `GET /oauth/authorize`, `POST /oauth/token` (authorization code and refresh grants; the authorization code grant requires PKCE)
 - `GET /sse` and `POST /messages/:sessionId` (SSE transport)
 - `POST /` and `POST /sse` (streamable HTTP transport)
 
