@@ -8,6 +8,8 @@ import { CallToolRequestSchema, ListToolsRequestSchema, isInitializeRequest } fr
 import { createClient } from '@supabase/supabase-js';
 import { validateSetOverride, buildOverrideRow, setOverrideMessage, formatOverrideResponse, OVERRIDE_SELECT } from "./daily-override.js";
 import { secretsMatch, logValue } from "./security.js";
+import { createTokenStore, DEFAULT_STORE_PATH } from "./token-store.js";
+import { handleRefreshGrant, tokenResponse } from "./oauth-token.js";
 import { baselineHeaders, noStore, parseAllowedOrigins, corsAllowlist } from "./http-headers.js";
 
 const app = express();
@@ -120,11 +122,11 @@ if (CLIENTS.size === 0) {
 }
 
 const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
-const ACCESS_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-// In-memory by design: this is a small, restart-tolerant service. Losing codes/tokens on restart just means re-authorizing.
+// Authorization codes are short-lived and stay in memory. Access and refresh
+// tokens are kept as hashes in a small file so restarts do not sign clients out.
 const AUTH_CODES = new Map();
-const ACCESS_TOKENS = new Map();
+const TOKENS = createTokenStore({ filePath: process.env.TOKEN_STORE_PATH || DEFAULT_STORE_PATH });
 
 function base64url(buffer) {
   return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -342,7 +344,7 @@ app.get("/.well-known/oauth-authorization-server", (req, res) => {
     token_endpoint: `${baseUrl}/oauth/token`,
     scopes_supported: ["onyx_mcp"],
     response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
     token_endpoint_auth_methods_supported: ["client_secret_post", "client_secret_basic"],
     code_challenge_methods_supported: ["S256"],
   });
@@ -393,10 +395,20 @@ app.get("/oauth/authorize", (req, res) => {
 });
 
 app.post("/oauth/token", express.urlencoded({ extended: false }), express.json(), (req, res) => {
-  const { grant_type, code, redirect_uri, code_verifier } = req.body;
+  const { grant_type, code, redirect_uri, code_verifier, refresh_token } = req.body;
   const basicAuth = getBasicAuthCredentials(req);
   const client_id = basicAuth ? basicAuth.clientId : req.body.client_id;
   const client_secret = basicAuth ? basicAuth.clientSecret : req.body.client_secret;
+
+  if (grant_type === "refresh_token") {
+    const result = handleRefreshGrant({
+      store: TOKENS, clients: CLIENTS, clientId: client_id, clientSecret: client_secret, refreshToken: refresh_token,
+    });
+    if (result.status !== 200) {
+      console.warn(`/oauth/token rejected: ${result.reason} (refresh_token) for client_id=${logValue(client_id)}`);
+    }
+    return res.status(result.status).json(result.body);
+  }
 
   if (grant_type !== "authorization_code") {
     console.warn(`/oauth/token rejected: unsupported grant_type=${logValue(grant_type)}`);
@@ -426,14 +438,7 @@ app.post("/oauth/token", express.urlencoded({ extended: false }), express.json()
     }
   }
 
-  const accessToken = crypto.randomBytes(32).toString("hex");
-  ACCESS_TOKENS.set(accessToken, { userId: client.userId, expiresAt: Date.now() + ACCESS_TOKEN_TTL_MS });
-
-  res.json({
-    access_token: accessToken,
-    token_type: "Bearer",
-    expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
-  });
+  res.json(tokenResponse(TOKENS.issue(client_id)));
 });
 
 // Shared by every /sse entry point (legacy SSE GET, Streamable HTTP
@@ -442,8 +447,9 @@ app.post("/oauth/token", express.urlencoded({ extended: false }), express.json()
 function authenticateRequest(req, res) {
   const authHeader = req.headers.authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  const tokenEntry = token && ACCESS_TOKENS.get(token);
-  const userId = tokenEntry && tokenEntry.expiresAt > Date.now() ? tokenEntry.userId : null;
+  const tokenEntry = token ? TOKENS.lookupAccess(token) : null;
+  const client = tokenEntry ? CLIENTS.get(tokenEntry.clientId) : null;
+  const userId = client ? client.userId : null;
 
   if (!userId) {
     console.warn(`${req.method} ${req.path} rejected: ${token ? "invalid or expired token" : "no bearer token"}`);
