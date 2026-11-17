@@ -26,3 +26,16 @@ export function verifyCodeVerifier(storedChallenge, verifier) {
   if (computed.length !== stored.length) return false;
   return crypto.timingSafeEqual(computed, stored);
 }
+
+// Looks up and consumes an authorization code (one-time), then checks client,
+// redirect_uri, expiry and the PKCE verifier. Returns true only if all pass.
+export function redeemAuthCode(codes, { code, clientId, redirectUri, codeVerifier, now = Date.now() }) {
+  const entry = codes.get(code);
+  if (!entry) return { ok: false, reason: "invalid_grant" };
+  codes.delete(code);
+  if (entry.expiresAt < now || entry.clientId !== clientId || entry.redirectUri !== redirectUri) {
+    return { ok: false, reason: "invalid_grant" };
+  }
+  if (!verifyCodeVerifier(entry.codeChallenge, codeVerifier)) return { ok: false, reason: "pkce" };
+  return { ok: true };
+}
