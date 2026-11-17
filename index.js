@@ -10,6 +10,7 @@ import { validateSetOverride, buildOverrideRow, setOverrideMessage, formatOverri
 import { secretsMatch, logValue } from "./security.js";
 import { createTokenStore, DEFAULT_STORE_PATH } from "./token-store.js";
 import { handleRefreshGrant, tokenResponse } from "./oauth-token.js";
+import { validateChallengeRequest, verifyCodeVerifier } from "./pkce.js";
 import { baselineHeaders, noStore, parseAllowedOrigins, corsAllowlist } from "./http-headers.js";
 
 const app = express();
@@ -127,10 +128,6 @@ const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
 // tokens are kept as hashes in a small file so restarts do not sign clients out.
 const AUTH_CODES = new Map();
 const TOKENS = createTokenStore({ filePath: process.env.TOKEN_STORE_PATH || DEFAULT_STORE_PATH });
-
-function base64url(buffer) {
-  return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
 
 function getBaseUrl(req) {
   return `${req.protocol}://${req.get("host")}`;
@@ -380,11 +377,21 @@ app.get("/oauth/authorize", (req, res) => {
     return res.status(400).send("invalid_request");
   }
 
+  const pkce = validateChallengeRequest(code_challenge, code_challenge_method);
+  if (!pkce.ok) {
+    console.warn(`/oauth/authorize rejected: ${pkce.reason} for client_id=${logValue(client_id)}`);
+    const errorUrl = new URL(redirect_uri);
+    errorUrl.searchParams.set("error", "invalid_request");
+    errorUrl.searchParams.set("error_description", "PKCE with code_challenge_method=S256 is required");
+    if (typeof state === "string" && state) errorUrl.searchParams.set("state", state);
+    return res.redirect(errorUrl.toString());
+  }
+
   const code = crypto.randomBytes(32).toString("hex");
   AUTH_CODES.set(code, {
     clientId: client_id,
     redirectUri: redirect_uri,
-    codeChallenge: code_challenge || null,
+    codeChallenge: code_challenge,
     expiresAt: Date.now() + AUTH_CODE_TTL_MS,
   });
 
@@ -428,14 +435,9 @@ app.post("/oauth/token", express.urlencoded({ extended: false }), express.json()
   }
   AUTH_CODES.delete(code);
 
-  if (authCode.codeChallenge) {
-    const computedChallenge = code_verifier
-      ? base64url(crypto.createHash("sha256").update(code_verifier).digest())
-      : null;
-    if (computedChallenge !== authCode.codeChallenge) {
-      console.warn(`/oauth/token rejected: PKCE verification failed for client_id=${logValue(client_id)}`);
-      return res.status(400).json({ error: "invalid_grant" });
-    }
+  if (!verifyCodeVerifier(authCode.codeChallenge, code_verifier)) {
+    console.warn(`/oauth/token rejected: PKCE verification failed for client_id=${logValue(client_id)}`);
+    return res.status(400).json({ error: "invalid_grant" });
   }
 
   res.json(tokenResponse(TOKENS.issue(client_id)));
