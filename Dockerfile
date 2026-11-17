@@ -23,7 +23,7 @@ RUN rm -rf /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
     fi
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY index.js daily-override.js security.js http-headers.js token-store.js oauth-token.js ./
+COPY index.js daily-override.js security.js http-headers.js token-store.js oauth-token.js pkce.js ./
 
 # Token store directory; a fresh named volume mounted here inherits this ownership.
 RUN mkdir /data && chown node:node /data
