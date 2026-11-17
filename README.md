@@ -5,8 +5,8 @@ workout tracker to MCP clients such as a claude.ai custom connector. It
 provides tools to read and write exercises, lifting and cardio logs,
 routines, body weight, measurements, daily overrides (a routine override or
 a rest day) and user settings.
-Access is protected by an OAuth 2.0 authorization-code flow with PKCE; each
-configured client is bound to one Supabase user.
+Access is protected by an OAuth 2.0 authorization-code flow with PKCE and
+rotating refresh tokens; each configured client is bound to one Supabase user.
 
 ## Prerequisites
 
@@ -99,8 +99,9 @@ through, so keep only application variables in that file. The container listens 
 
 The container is hardened: it runs as the unprivileged `node` user (uid 1000),
 with a read-only root filesystem, all Linux capabilities dropped and
-`no-new-privileges` set. The app writes nothing to disk, so no tmpfs or volume
-is needed. Compose also defines a health check that runs `node` to request
+`no-new-privileges` set. The only thing the app writes is the token store (see
+[Tokens and persistence](#tokens-and-persistence)), on the named volume
+`onyx-mcp-data` mounted at `/data`; no tmpfs is needed. Compose also defines a health check that runs `node` to request
 `http://127.0.0.1:10000/` and fails on a non-200 response.
 
 ## TLS
@@ -124,8 +125,29 @@ Server-side connectors make no cross-origin browser requests and need no CORS
 configuration. A browser-based client must have its exact origin added to
 `CORS_ALLOWED_ORIGINS` (then restart).
 
-Authorization codes and access tokens are held in memory, so every restart
-requires clients to re-authorize.
+## Tokens and persistence
+
+The token endpoint supports the `authorization_code` and `refresh_token`
+grants (advertised in the discovery metadata). A successful code exchange
+returns a short-lived access token (1 hour) and a refresh token (90 days).
+Presenting the refresh token with the same client credentials returns a new
+access token and a new refresh token; the old refresh token stops working
+(rotation), and the 90-day lifetime restarts on each refresh. Reusing an
+already-rotated refresh token is rejected and ends that session. Connectors
+that support refresh therefore stay signed in without manual reconnects.
+
+Access and refresh tokens are stored as SHA-256 hashes in a small JSON file
+(`/data/tokens.json`, mode 0600; override with `TOKEN_STORE_PATH`) on the
+`onyx-mcp-data` volume, so restarts and redeploys keep sessions. Raw tokens are
+never written to disk. Authorization codes stay in memory (5 minutes). If the
+file cannot be read or written, the server logs a warning and keeps tokens in
+memory only, so a restart then requires re-authorizing. A file that cannot be
+parsed is left untouched.
+
+To sign every client out, stop the stack and delete the volume
+(`docker compose down -v`) or just `tokens.json`. Do not use `down -v` for
+routine redeploys. The file lives on a volume rather than in Supabase to avoid
+a new table and extra database privileges for a small, single-instance service.
 
 ## Daily overrides
 
@@ -159,7 +181,7 @@ quoted test glob is not expanded and the run fails.
 
 - `GET /` health check
 - `GET /.well-known/oauth-authorization-server`, `GET /.well-known/oauth-protected-resource`
-- `POST /oauth/register`, `GET /oauth/authorize`, `POST /oauth/token`
+- `POST /oauth/register`, `GET /oauth/authorize`, `POST /oauth/token` (authorization code and refresh grants)
 - `GET /sse` and `POST /messages/:sessionId` (SSE transport)
 - `POST /` and `POST /sse` (streamable HTTP transport)
 
