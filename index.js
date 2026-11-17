@@ -10,7 +10,7 @@ import { validateSetOverride, buildOverrideRow, setOverrideMessage, formatOverri
 import { secretsMatch, logValue } from "./security.js";
 import { createTokenStore, DEFAULT_STORE_PATH } from "./token-store.js";
 import { handleRefreshGrant, tokenResponse } from "./oauth-token.js";
-import { validateChallengeRequest, verifyCodeVerifier } from "./pkce.js";
+import { validateChallengeRequest, redeemAuthCode } from "./pkce.js";
 import { baselineHeaders, noStore, parseAllowedOrigins, corsAllowlist } from "./http-headers.js";
 
 const app = express();
@@ -428,15 +428,9 @@ app.post("/oauth/token", express.urlencoded({ extended: false }), express.json()
     return res.status(401).json({ error: "invalid_client" });
   }
 
-  const authCode = AUTH_CODES.get(code);
-  if (!authCode || authCode.expiresAt < Date.now() || authCode.clientId !== client_id || authCode.redirectUri !== redirect_uri) {
-    console.warn(`/oauth/token rejected: invalid_grant for client_id=${logValue(client_id)} (missing/expired/reused code or redirect_uri mismatch)`);
-    return res.status(400).json({ error: "invalid_grant" });
-  }
-  AUTH_CODES.delete(code);
-
-  if (!verifyCodeVerifier(authCode.codeChallenge, code_verifier)) {
-    console.warn(`/oauth/token rejected: PKCE verification failed for client_id=${logValue(client_id)}`);
+  const redeemed = redeemAuthCode(AUTH_CODES, { code, clientId: client_id, redirectUri: redirect_uri, codeVerifier: code_verifier });
+  if (!redeemed.ok) {
+    console.warn(`/oauth/token rejected: ${redeemed.reason === "pkce" ? "PKCE verification failed" : "invalid_grant (missing/expired/reused code or redirect_uri mismatch)"} for client_id=${logValue(client_id)}`);
     return res.status(400).json({ error: "invalid_grant" });
   }
 
