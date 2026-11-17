@@ -12,6 +12,9 @@ services:
       # Keep the in-container port fixed; PORT in .env only changes the host side.
       PORT: "10000"
     read_only: true
+    volumes:
+      # Hashed access/refresh tokens (TOKEN_STORE_PATH, default /data/tokens.json).
+      - onyx-mcp-data:/data
     cap_drop:
       - ALL
     security_opt:
@@ -26,3 +29,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+volumes:
+  onyx-mcp-data:
